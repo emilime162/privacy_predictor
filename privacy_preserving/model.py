@@ -10,10 +10,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchvision import models
+from torch.utils.data import DataLoader  # Ensure DataLoader is imported
 from utils import preprocess_image, load_ground_truth_labels  # Import from utils.py
 from data_utils import DataUtils  
 import config
 from sklearn.metrics import precision_score, recall_score, f1_score
+
 
 # Check CUDA availability and capability
 if torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 3.7:
@@ -33,15 +35,33 @@ class MyCNN(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-    def train_model(self, train_loader, criterion, optimizer):
+    def train_model(self, train_loader, val_loader, criterion, optimizer, num_epochs):
         self.model.train()
-        for images, labels in train_loader:
-            images, labels = images.to(config.device), labels.to(config.device)
-            optimizer.zero_grad()
-            outputs = self.forward(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            for images, labels in train_loader:
+                images, labels = images.to(device), labels.to(device)
+                optimizer.zero_grad()
+                outputs = self.forward(images)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+
+            val_loss = self.validate_model(val_loader, criterion)
+            print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {running_loss/len(train_loader):.4f}, Validation Loss: {val_loss:.4f}")
+
+    def validate_model(self, val_loader, criterion):
+        self.model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = self.forward(images)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+        self.model.train()
+        return val_loss / len(val_loader)
 
     def test_model(self, test_loader, criterion):
         self.model.eval()
@@ -107,25 +127,45 @@ class MyCNN(nn.Module):
         print(f"F1 Score: {f1:.4f}\n")
     
 if __name__ == "__main__":
-    # Load the preprocessed dataset
-    data_utils = DataUtils('', '')  # Dummy paths, since we're loading a preprocessed dataset
-    dataset = data_utils.load_dataset('preprocessed_dataset.pkl')
+    # Define paths to the preprocessed dataset files
+    train_dataset_path = 'train_preprocessed_dataset.pkl'
+    val_dataset_path = 'val_preprocessed_dataset.pkl'
+    test_folder_path = 'test'  # Adjust this path if necessary
 
-        # Example of testing the model with data in the test file
-    model = MyCNN(num_classes=len(dataset.labels))  # Use the correct number of classes (2 in this case)
+    # Initialize DataUtils and load the preprocessed datasets
+    data_utils = DataUtils('', '')  # Dummy paths for initialization
+    train_dataset = data_utils.load_dataset(train_dataset_path)
+    val_dataset = data_utils.load_dataset(val_dataset_path)
 
-    model.load_state_dict(torch.load('multi_label_image_classification_model.pth', map_location=device), strict=False)
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
+
+    # Initialize model, criterion, and optimizer
+    model = MyCNN(num_classes=len(train_dataset.labels))
     model = model.to(device)
-
-    # Testing the model
-    test_loader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False)
     criterion = nn.BCEWithLogitsLoss()
-    test_loss = model.test_model(test_loader, criterion)
-    print(f"Test Loss: {test_loss}")
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # Evaluate the model
-    test_folder_path = 'test'
-    model.evaluate_model(dataset, test_folder_path)
+    # Train the model
+    num_epochs = 25
+    model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
+
+    # Save the trained model
+    torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
+
+    # Evaluate the model on the validation set
+    val_loss = model.test_model(val_loader, criterion)
+    print(f"Validation Loss: {val_loss}")
+    
+    # for a separate test set, load it similarly and create a DataLoader for it
+    # test_dataset = data_utils.load_dataset('test_preprocessed_dataset.pkl')  
+    # test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
+    # test_loss = model.test_model(test_loader, criterion)
+    # print(f"Test Loss: {test_loss}")
+
+    # Evaluate the model on the test set using the `evaluate_model` method
+    model.evaluate_model(val_dataset, test_folder_path)  # Use appropriate dataset if you have a separate test dataset
 
     # Predicting labels for a single image
     test_image_path = "/home/chen.shix/test/images/2017_10665299.jpg"  # Make sure this path is correct

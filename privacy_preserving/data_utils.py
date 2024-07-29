@@ -108,43 +108,43 @@ class DataUtils:
 # Test the DataUtils class
 if __name__ == "__main__":
     # Define paths to the folders
-    label_folder_path = 'training/labels'
-    image_folder_path = 'training/images'
+    train_label_folder_path = 'training/labels'
+    train_image_folder_path = 'training/images'
+    val_label_folder_path = 'validation/labels'
+    val_image_folder_path = 'validation/images'
 
     # Initialize DataUtils and load data
-    data_utils = DataUtils(label_folder_path, image_folder_path)
+    train_data_utils = DataUtils(train_label_folder_path, train_image_folder_path)
+    val_data_utils = DataUtils(val_label_folder_path, val_image_folder_path)
 
-    # Load data from JSON files into a DataFrame
-    df = data_utils.load_json_files_to_df()
+    # Load data from JSON files into DataFrames
+    df_train = train_data_utils.load_json_files_to_df()
+    df_val = val_data_utils.load_json_files_to_df()
 
     # Show the first few rows of the DataFrame to verify data loading
-    print("First few rows of the DataFrame:")
-    print(df.head())
+    print("First few rows of the training DataFrame:")
+    print(df_train.head())
+    print("First few rows of the validation DataFrame:")
+    print(df_val.head())
 
     # Print the number of samples loaded
-    print(f"Number of samples loaded: {len(df)}")
-
-    # # Check if the filtered dataset only contains the expected labels
-    # unique_labels = df['label'].unique()
-    # expected_labels = ['a16_race', 'a6_hair_color']
-
-    # if set(unique_labels) == set(expected_labels):
-    #     print("The dataset has been successfully filtered to include only the specified labels.")
-    # else:
-    #     print("The dataset contains labels other than the specified ones.")
-    #     print("Found labels:", unique_labels)
-
+    print(f"Number of training samples loaded: {len(df_train)}")
+    print(f"Number of validation samples loaded: {len(df_val)}")
 
     # Optionally save the DataFrame to a CSV file for further inspection
-    data_utils.save_dataframe_to_csv(df, 'filtered_image_data_and_labels.csv')
+    train_data_utils.save_dataframe_to_csv(df_train, 'filtered_image_data_and_labels_train.csv')
+    val_data_utils.save_dataframe_to_csv(df_val, 'filtered_image_data_and_labels_val.csv')
 
-
-    # Create the dataset using the loaded DataFrame
-    transform = data_utils.get_transform()
-    dataset = DataUtils.MultiLabelImageDataset(df, transform=transform)
+    # Create the datasets using the loaded DataFrames
+    transform = train_data_utils.get_transform()
+    train_dataset = DataUtils.MultiLabelImageDataset(df_train, transform=transform)
+    val_dataset = DataUtils.MultiLabelImageDataset(df_val, transform=transform)
+ 
 
     # Save the preprocessed dataset
-    data_utils.save_dataset(dataset, 'preprocessed_dataset.pkl')
+    train_data_utils.save_dataset(train_dataset, 'train_preprocessed_dataset.pkl')
+    val_data_utils.save_dataset(val_dataset, 'val_preprocessed_dataset.pkl')
+
 
     # Visualize an example image
-    data_utils.visualize_image(dataset, 0)
+    train_data_utils.visualize_image(train_dataset, 0)
