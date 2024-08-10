@@ -72,13 +72,18 @@ class MyCNN(nn.Module):
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()
+                # Apply a threshold to get binary predictions for each label
+                predicted = (torch.sigmoid(outputs) > 0.5).float()
+                #print(f"Predicted shape: {predicted.shape}, Labels shape: {labels.shape}")
 
-                # Calculate training accuracy
-                _, predicted = torch.max(outputs.data, 1)
+
+                # Compare the predicted labels with the true labels
                 correct_train += (predicted == labels).sum().item()
-                total_train += labels.size(0)
+                total_train += labels.numel()  # Total number of labels
 
             train_loss = running_loss / len(train_loader)
+            train_accuracy = correct_train / total_train  # Calculate training accuracy
+
             val_loss, val_accuracy = self.evaluate_model(val_loader, criterion)
             # Store the losses
             training_losses.append(train_loss)
@@ -198,20 +203,21 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
 
-    # # Initialize model, criterion, and optimizer
-    # model = MyCNN(num_classes=len(train_dataset.labels))
-    # model = model.to(device)
-    # criterion = nn.BCEWithLogitsLoss()
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # Initialize model, criterion, and optimizer
+    model = MyCNN(num_classes=len(train_dataset.labels))
+    print("label nums")
+    print(len(train_dataset.labels))
+    model = model.to(device)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # # Train the model
-    # num_epochs = 25
-    # model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
+    # Train the model
+    num_epochs = 20
+    model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
 
-    # # Save the trained model
-    # torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
+    # Save the trained model
+    torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
 
-    # Define model and number of classes
     num_classes = 2
     model = MyCNN(num_classes)
 

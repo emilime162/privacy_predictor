@@ -23,7 +23,8 @@ class DataUtils:
     def load_json_files_to_df(self):
         data_list = []
         label_counts = {label: 0 for label in self.target_labels}  # Initialize label counts
-
+        images_with_labels = set()
+        total_images = set()
 
         for filename in os.listdir(self.label_folder_path):
             if filename.endswith(".json"):
@@ -31,8 +32,10 @@ class DataUtils:
                 with open(file_path, 'r') as file:
                     json_data = json.load(file)
                     image_path = os.path.join(self.image_folder_path, os.path.basename(json_data["image_path"]))
+                    total_images.add(image_path)  # Track all images
                     filtered_labels = [label for label in json_data["labels"] if label in self.target_labels]
                     if filtered_labels:
+                        images_with_labels.add(image_path)  # Track images with labels
                         for label in filtered_labels:
                             data_list.append({
                                 "id": json_data["id"],
@@ -41,18 +44,23 @@ class DataUtils:
                             })
                             label_counts[label] += 1  # Increment label count
 
+        # Calculate images with and without labels
+        images_without_labels = total_images - images_with_labels
+        num_images_with_labels = len(images_with_labels)
+        num_images_without_labels = len(images_without_labels)
+
+        # Print the counts (optional)
+        print(f"Images with labels: {num_images_with_labels}")
+        print(f"Images without labels: {num_images_without_labels}")
+
         # Print the count of each label
         print("Label counts:")
         for label, count in label_counts.items():
             print(f"{label}: {count}")
 
         df = pd.DataFrame(data_list)
-        return df
-        # If a sample size is specified, randomly sample from the dataframe
-        if sample_size is not None and len(df) > sample_size:
-            df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+        return df, num_images_with_labels, num_images_without_labels
 
-        return df
 
     class MultiLabelImageDataset(Dataset):
         def __init__(self, dataframe, transform=None):
@@ -131,8 +139,8 @@ if __name__ == "__main__":
     val_data_utils = DataUtils(val_label_folder_path, val_image_folder_path)
 
     # Load data from JSON files into DataFrames
-    df_train = train_data_utils.load_json_files_to_df()
-    df_val = val_data_utils.load_json_files_to_df()
+    df_train, train_num_with_labels, train_num_without_labels = train_data_utils.load_json_files_to_df()
+    df_val, val_num_with_labels, val_num_without_labels = val_data_utils.load_json_files_to_df()
 
     
     # Show the first few rows of the DataFrame to verify data loading
