@@ -27,6 +27,23 @@ def load_ground_truth_labels(json_path, dataset):
             ground_truth_labels[dataset.label_to_idx[label]] = 1
     return ground_truth_labels
 
+def plot_training_validation_loss(training_loss_history, validation_loss_history):
+    """
+    Plots the training and validation loss history.
+
+    Args:
+    - training_loss_history (list): List of training loss values for each epoch.
+    - validation_loss_history (list): List of validation loss values for each epoch.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(training_loss_history) + 1), training_loss_history, label='Training Loss')
+    plt.plot(range(1, len(validation_loss_history) + 1), validation_loss_history, label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.show()
+
 
 # def evaluate_model(model, dataset, test_folder_path):
 #     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

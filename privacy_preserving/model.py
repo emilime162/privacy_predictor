@@ -1,5 +1,7 @@
 import sys
 import os
+from sklearn.metrics import hamming_loss
+
 
 # Append the current working directory to the system path
 cwd = os.getcwd()
@@ -29,15 +31,38 @@ else:
 class MyCNN(nn.Module):
     def __init__(self, num_classes):
         super(MyCNN, self).__init__()
-        self.model = models.mobilenet_v2(pretrained=False)
-        self.model.classifier[1] = nn.Linear(self.model.last_channel, num_classes)
+        self.model = models.mobilenet_v2(pretrained=True)
+        # Freeze early layers
+        for param in self.model.features.parameters():
+            param.requires_grad = False
+        # Modify the classifier
+        self.model.classifier[1] = nn.Sequential(
+            nn.Dropout(p=0.5),
+            nn.Linear(self.model.last_channel, num_classes)
+        )
 
     def forward(self, x):
         return self.model(x)
 
-    def train_model(self, train_loader, val_loader, criterion, optimizer, num_epochs):
+    def train_model(self, train_loader, val_loader, criterion, optimizer, num_epochs, patience=10):
+        best_val_loss = float('inf')
+        epochs_no_improve = 0
+        early_stop = False
+
+        # Lists to store losses for plotting
+        training_losses = []
+        validation_losses = []
         self.model.train()
+        running_loss = 0.0
+        correct_train = 0
+        total_train = 0
+
+
         for epoch in range(num_epochs):
+            if early_stop:
+                print(f"Early stopping triggered. Stopping training at epoch {epoch+1}.")
+                break
+            self.model.train()
             running_loss = 0.0
             for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)
@@ -48,8 +73,34 @@ class MyCNN(nn.Module):
                 optimizer.step()
                 running_loss += loss.item()
 
-            val_loss = self.validate_model(val_loader, criterion)
-            print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {running_loss/len(train_loader):.4f}, Validation Loss: {val_loss:.4f}")
+                # Calculate training accuracy
+                _, predicted = torch.max(outputs.data, 1)
+                correct_train += (predicted == labels).sum().item()
+                total_train += labels.size(0)
+
+            train_loss = running_loss / len(train_loader)
+            val_loss, val_accuracy = self.evaluate_model(val_loader, criterion)
+            # Store the losses
+            training_losses.append(train_loss)
+            validation_losses.append(val_loss)
+
+            print(f"Epoch [{epoch+1}/{num_epochs}], "
+                  f"Training Loss: {train_loss:.4f}, Training Accuracy: {train_accuracy*100:.2f}%, "
+                  f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy*100:.2f}%")
+
+            # Early stopping logic
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_no_improve = 0
+                torch.save(self.state_dict(), 'best_model.pth')  # Save the best model
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= patience:
+                    print(f"No improvement for {patience} consecutive epochs. Stopping early.")
+                    early_stop = True
+        # Plot the training and validation loss
+        self.plot_losses(training_losses, validation_losses)
+
 
     def validate_model(self, val_loader, criterion):
         self.model.eval()
@@ -85,7 +136,7 @@ class MyCNN(nn.Module):
         predicted_labels = [1 if output[0][i] >= threshold else 0 for i in range(len(output[0]))]
         return predicted_labels
 
-    def evaluate_model(model, dataset, test_folder_path):
+    def evaluate_model(self, dataset, test_folder_path):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         images_path = os.path.join(test_folder_path, 'images')
         labels_path = os.path.join(test_folder_path, 'labels')
@@ -115,6 +166,12 @@ class MyCNN(nn.Module):
 
         y_true = np.array(y_true)
         y_pred = np.array(y_pred)
+        # Calculate Hamming Loss and Hamming Accuracy
+        hamming = hamming_loss(y_true, y_pred)
+        hamming_accuracy = 1 - hamming
+
+        print(f"Hamming Accuracy: {hamming_accuracy:.4f}")
+        print(f"Hamming Loss: {hamming:.4f}")
 
         # Calculate precision, recall, and F1-score
         precision = precision_score(y_true, y_pred, average='micro')
@@ -122,17 +179,17 @@ class MyCNN(nn.Module):
         f1 = f1_score(y_true, y_pred, average='micro')
 
         print(f"Threshold: {threshold:.1f}")
+        print(f"Accuracy: {accuracy:.4f}")
         print(f"Precision: {precision:.4f}")
         print(f"Recall: {recall:.4f}")
         print(f"F1 Score: {f1:.4f}\n")
     
 if __name__ == "__main__":
-    # Define paths to the preprocessed dataset files
+    # # Define paths to the preprocessed dataset files
     train_dataset_path = 'train_preprocessed_dataset.pkl'
     val_dataset_path = 'val_preprocessed_dataset.pkl'
-    test_folder_path = 'test'  # Adjust this path if necessary
 
-    # Initialize DataUtils and load the preprocessed datasets
+    # # Initialize DataUtils and load the preprocessed datasets
     data_utils = DataUtils('', '')  # Dummy paths for initialization
     train_dataset = data_utils.load_dataset(train_dataset_path)
     val_dataset = data_utils.load_dataset(val_dataset_path)
@@ -141,22 +198,33 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
 
-    # Initialize model, criterion, and optimizer
-    model = MyCNN(num_classes=len(train_dataset.labels))
-    model = model.to(device)
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # # Initialize model, criterion, and optimizer
+    # model = MyCNN(num_classes=len(train_dataset.labels))
+    # model = model.to(device)
+    # criterion = nn.BCEWithLogitsLoss()
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # Train the model
-    num_epochs = 25
-    model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
+    # # Train the model
+    # num_epochs = 25
+    # model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
 
-    # Save the trained model
-    torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
+    # # Save the trained model
+    # torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
 
-    # Evaluate the model on the validation set
-    val_loss = model.test_model(val_loader, criterion)
-    print(f"Validation Loss: {val_loss}")
+    # Define model and number of classes
+    num_classes = 2
+    model = MyCNN(num_classes)
+
+    # Load the model
+    model = MyCNN(num_classes)  # Make sure this matches the structure when you saved it
+    model.load_state_dict(torch.load('mobilenet_v2_model.pth'))
+
+    # If using GPU, move to GPU
+    model = model.to('cuda') if torch.cuda.is_available() else model
+
+    # Set model to evaluation mode
+    model.eval()
+
     
     # for a separate test set, load it similarly and create a DataLoader for it
     # test_dataset = data_utils.load_dataset('test_preprocessed_dataset.pkl')  
@@ -165,13 +233,18 @@ if __name__ == "__main__":
     # print(f"Test Loss: {test_loss}")
 
     # Evaluate the model on the test set using the `evaluate_model` method
-    model.evaluate_model(val_dataset, test_folder_path)  # Use appropriate dataset if you have a separate test dataset
+    # If you have a specific folder for validation data
+    validation_folder_path = 'val_200'
 
-    # Predicting labels for a single image
-    test_image_path = "/home/chen.shix/test/images/2017_10665299.jpg"  # Make sure this path is correct
-    threshold = 0.5
-    predicted_labels = model.predict_labels(test_image_path, threshold)
-    print(f"Predicted labels for {test_image_path}: {predicted_labels}")
+    model.evaluate_model(val_dataset, validation_folder_path)
+
+
+
+    # # Predicting labels for a single image
+    # test_image_path = "/home/chen.shix/test/images/2017_10665299.jpg"  # Make sure this path is correct
+    # threshold = 0.5
+    # predicted_labels = model.predict_labels(test_image_path, threshold)
+    # print(f"Predicted labels for {test_image_path}: {predicted_labels}")
 
     # # Example of testing the model with data in the test file
     # model = MyCNN(num_classes=len(dataset.labels))  # Use the correct number of classes

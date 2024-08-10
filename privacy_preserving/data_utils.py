@@ -22,6 +22,8 @@ class DataUtils:
 
     def load_json_files_to_df(self):
         data_list = []
+        label_counts = {label: 0 for label in self.target_labels}  # Initialize label counts
+
 
         for filename in os.listdir(self.label_folder_path):
             if filename.endswith(".json"):
@@ -37,8 +39,19 @@ class DataUtils:
                                 "image_path": image_path,
                                 "label": label
                             })
+                            label_counts[label] += 1  # Increment label count
+
+        # Print the count of each label
+        print("Label counts:")
+        for label, count in label_counts.items():
+            print(f"{label}: {count}")
 
         df = pd.DataFrame(data_list)
+        return df
+        # If a sample size is specified, randomly sample from the dataframe
+        if sample_size is not None and len(df) > sample_size:
+            df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+
         return df
 
     class MultiLabelImageDataset(Dataset):
@@ -108,10 +121,10 @@ class DataUtils:
 # Test the DataUtils class
 if __name__ == "__main__":
     # Define paths to the folders
-    train_label_folder_path = 'training/labels'
-    train_image_folder_path = 'training/images'
-    val_label_folder_path = 'validation/labels'
-    val_image_folder_path = 'validation/images'
+    train_label_folder_path = 'training_data_3000/labels'
+    train_image_folder_path = 'training_data_3000/images'
+    val_label_folder_path = 'val_200/labels'
+    val_image_folder_path = 'val_200/images'
 
     # Initialize DataUtils and load data
     train_data_utils = DataUtils(train_label_folder_path, train_image_folder_path)
@@ -121,6 +134,7 @@ if __name__ == "__main__":
     df_train = train_data_utils.load_json_files_to_df()
     df_val = val_data_utils.load_json_files_to_df()
 
+    
     # Show the first few rows of the DataFrame to verify data loading
     print("First few rows of the training DataFrame:")
     print(df_train.head())
