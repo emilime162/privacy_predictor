@@ -27,61 +27,14 @@ def load_ground_truth_labels(json_path, dataset):
             ground_truth_labels[dataset.label_to_idx[label]] = 1
     return ground_truth_labels
 
-def plot_training_validation_loss(training_loss_history, validation_loss_history):
-    """
-    Plots the training and validation loss history.
 
-    Args:
-    - training_loss_history (list): List of training loss values for each epoch.
-    - validation_loss_history (list): List of validation loss values for each epoch.
-    """
+
+def plot_losses(self, training_losses, validation_losses):
     plt.figure(figsize=(10, 5))
-    plt.plot(range(1, len(training_loss_history) + 1), training_loss_history, label='Training Loss')
-    plt.plot(range(1, len(validation_loss_history) + 1), validation_loss_history, label='Validation Loss')
+    plt.plot(training_losses, label='Training Loss')
+    plt.plot(validation_losses, label='Validation Loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
+    plt.title('Training and Validation Loss over Epochs')
     plt.legend()
     plt.show()
-
-
-# def evaluate_model(model, dataset, test_folder_path):
-#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#     images_path = os.path.join(test_folder_path, 'images')
-#     labels_path = os.path.join(test_folder_path, 'labels')
-#     threshold = 0.5
-#     num_classes = len(dataset.labels)
-
-#     print(f"Evaluating for threshold: {threshold}")
-
-#     y_true = []
-#     y_pred = []
-
-#     for filename in os.listdir(images_path):
-#         if filename.endswith(".jpg"):
-#             image_path = os.path.join(images_path, filename)
-#             label_file = os.path.splitext(filename)[0] + '.json'
-#             label_path = os.path.join(labels_path, label_file)
-
-#             if not os.path.exists(label_path):
-#                 print(f"Label file for {filename} not found.")
-#                 continue
-
-#             predicted_labels = model.predict_labels(image_path, threshold)
-#             ground_truth_labels = load_ground_truth_labels(label_path, dataset)
-
-#             y_true.append(ground_truth_labels)
-#             y_pred.append(predicted_labels)
-
-#     y_true = np.array(y_true)
-#     y_pred = np.array(y_pred)
-
-#     # Calculate precision, recall, and F1-score
-#     precision = precision_score(y_true, y_pred, average='micro')
-#     recall = recall_score(y_true, y_pred, average='micro')
-#     f1 = f1_score(y_true, y_pred, average='micro')
-
-#     print(f"Threshold: {threshold:.1f}")
-#     print(f"Precision: {precision:.4f}")
-#     print(f"Recall: {recall:.4f}")
-#     print(f"F1 Score: {f1:.4f}\n")

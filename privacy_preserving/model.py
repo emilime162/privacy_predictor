@@ -1,7 +1,10 @@
 import sys
 import os
+import matplotlib.pyplot as plt
 from sklearn.metrics import hamming_loss
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from utils import plot_losses
 
 # Append the current working directory to the system path
 cwd = os.getcwd()
@@ -46,6 +49,8 @@ class MyCNN(nn.Module):
             nn.Linear(self.model.last_channel, num_classes)
         )
 
+
+        
     def forward(self, x):
         return self.model(x)
 
@@ -146,64 +151,87 @@ class MyCNN(nn.Module):
     #             test_loss += loss.item()
     #     return test_loss / len(test_loader)
 
-    def predict_labels(self, image_path, threshold):
-        image = preprocess_image(image_path)
-        image = image.to(config.device)
-        self.eval()
+
+
+    # Function to debug predictions and ground truth
+    def debug_predictions(self, dataloader, num_images=5):
+        model.eval()
         with torch.no_grad():
-            output = self(image)
-        output = torch.sigmoid(output)
-        output = output.cpu().numpy()
-        predicted_labels = [1 if output[0][i] >= threshold else 0 for i in range(len(output[0]))]
-        return predicted_labels
+            # Iterate through the dataset
+            for i, (images, labels) in enumerate(dataloader):
+                if i >= num_images:
+                    break
+                
+                # Move images to the appropriate device
+                images = images.to(device)
+                
+                # Get model predictions
+                outputs = model(images)
+                predictions = torch.sigmoid(outputs) > 0.5  # Apply sigmoid and threshold
+                
+                # Move predictions and labels back to CPU for easy handling
+                predictions = predictions.cpu().numpy()
+                labels = labels.cpu().numpy()
+                
+                print(f"Image {i+1}:")
+                print(f"Predicted Labels: {predictions[0]}")  # Print the predicted labels for the first image in the batch
+                print(f"Ground Truth Labels: {labels[0]}")   # Print the ground truth labels for the first image in the batch
+                print("-----")
 
-    def evaluate_model(self, dataset, test_folder_path):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        images_path = os.path.join(test_folder_path, 'images')
-        labels_path = os.path.join(test_folder_path, 'labels')
-        threshold = 0.5
-        num_classes = len(dataset.labels)
-
-        print(f"Evaluating for threshold: {threshold}")
+    def evaluate_model(self, test_loader, criterion, num_classes, class_names):
+        self.model.eval()
+        test_loss = 0.0
+        accuracy_metric = MultilabelAccuracy(num_labels=num_classes).to(device)
 
         y_true = []
         y_pred = []
 
-        for filename in os.listdir(images_path):
-            if filename.endswith(".jpg"):
-                image_path = os.path.join(images_path, filename)
-                label_file = os.path.splitext(filename)[0] + '.json'
-                label_path = os.path.join(labels_path, label_file)
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = self.forward(images)
+                loss = criterion(outputs, labels)
+                test_loss += loss.item()
 
-                if not os.path.exists(label_path):
-                    print(f"Label file for {filename} not found.")
-                    continue
+                # Convert logits to binary predictions
+                predictions = torch.sigmoid(outputs) > 0.5  
+                accuracy_metric.update(predictions, labels)
 
-                predicted_labels = model.predict_labels(image_path, threshold)
-                ground_truth_labels = load_ground_truth_labels(label_path, dataset)
+                # Store the predictions and true labels for additional metrics
+                y_true.append(labels.cpu().numpy())
+                y_pred.append(predictions.cpu().numpy())
 
-                y_true.append(ground_truth_labels)
-                y_pred.append(predicted_labels)
+        test_loss /= len(test_loader)
+        accuracy = accuracy_metric.compute().item()
 
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
-        # Calculate Hamming Loss and Hamming Accuracy
+        # Concatenate all batches into a single array
+        y_true = np.concatenate(y_true, axis=0)
+        y_pred = np.concatenate(y_pred, axis=0)
+
+        # Calculate additional metrics
+        precision = precision_score(y_true, y_pred, average='micro')
+        recall = recall_score(y_true, y_pred, average='micro')
+        f1 = f1_score(y_true, y_pred, average='micro')
         hamming = hamming_loss(y_true, y_pred)
         hamming_accuracy = 1 - hamming
 
         print(f"Hamming Accuracy: {hamming_accuracy:.4f}")
         print(f"Hamming Loss: {hamming:.4f}")
-
-        # Calculate precision, recall, and F1-score
-        precision = precision_score(y_true, y_pred, average='micro')
-        recall = recall_score(y_true, y_pred, average='micro')
-        f1 = f1_score(y_true, y_pred, average='micro')
-
-        print(f"Threshold: {threshold:.1f}")
         print(f"Accuracy: {accuracy:.4f}")
         print(f"Precision: {precision:.4f}")
         print(f"Recall: {recall:.4f}")
         print(f"F1 Score: {f1:.4f}\n")
+        
+        # Generate a confusion matrix for each label
+        for i, label in enumerate(class_names):
+            cm = confusion_matrix(y_true[:, i], y_pred[:, i])
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[f'Not {label}', label])
+            disp.plot(cmap=plt.cm.Blues)
+            plt.title(f'Confusion Matrix for {label}')
+            plt.savefig(f'confusion_matrix_{label}.png')  # Save the plot as an image file
+            plt.close()  # Close the plot to avoid displaying it in the terminal
+
+        return test_loss, accuracy, precision, recall, f1, hamming_accuracy
     
 if __name__ == "__main__":
     # # Define paths to the preprocessed dataset files
@@ -219,23 +247,39 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
 
+    # Count the number of images for each label
+    label_columns = ['a16_race', 'a6_hair_color']   # Replace with your actual label columns
+    label_counts = {label: 0 for label in label_columns}
+    
+    # Loop through the entire dataset to count labels
+    for _, labels in val_loader:
+        for i, label in enumerate(label_columns):
+            label_counts[label] += labels[:, i].sum().item()  # Sum the occurrences of each label in the batch
+
+    print("Number of images for each label:")
+    for label, count in label_counts.items():
+        print(f"{label}: {count}")
+
+    # Assuming a batch of data
+    for images, labels in val_loader:
+        print("label the first set of label")
+        print(labels[0])  # Print the first set of labels in the batch
+        break  # Only need to check the first batch
+
     # Initialize model, criterion, and optimizer
     model = MyCNN(num_classes=len(train_dataset.labels))
-    print("label nums")
-    print(len(train_dataset.labels))
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # Train the model
-    num_epochs = 20
-    model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
+    # # Train the model
+    # num_epochs = 5
+    # model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
 
-    # Save the trained model
-    torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
+    # # Save the trained model
+    # torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
 
     num_classes = 2
-    model = MyCNN(num_classes)
 
     # Load the model
     model = MyCNN(num_classes)  # Make sure this matches the structure when you saved it
@@ -243,6 +287,10 @@ if __name__ == "__main__":
 
     # If using GPU, move to GPU
     model = model.to('cuda') if torch.cuda.is_available() else model
+
+    # Debug predictions for 5 specific images
+    model.debug_predictions( val_loader, num_images=5)
+
 
     # Set model to evaluation mode
     model.eval()
@@ -253,14 +301,13 @@ if __name__ == "__main__":
     # test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
     # test_loss = model.test_model(test_loader, criterion)
     # print(f"Test Loss: {test_loss}")
-
-    # Evaluate the model on the test set using the `evaluate_model` method
-    # If you have a specific folder for validation data
-    validation_folder_path = 'val_200'
-
-    model.evaluate_model(val_dataset, validation_folder_path)
+    
+    # val_loss, val_accuracy = model.validate_model(val_loader, criterion,model.num_classes)
+    # print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy*100:.2f}%")
 
 
+    class_names = ["Race", "hair color"]
+    test_loss, test_accuracy, precision, recall, f1, hamming_accuracy = model.evaluate_model(val_loader, criterion, num_classes, class_names)
 
     # # Predicting labels for a single image
     # test_image_path = "/home/chen.shix/test/images/2017_10665299.jpg"  # Make sure this path is correct
