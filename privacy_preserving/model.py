@@ -17,6 +17,8 @@ from utils import preprocess_image, load_ground_truth_labels  # Import from util
 from data_utils import DataUtils  
 import config
 from sklearn.metrics import precision_score, recall_score, f1_score
+from torchmetrics.classification import MultilabelAccuracy
+
 
 
 # Check CUDA availability and capability
@@ -31,7 +33,10 @@ else:
 class MyCNN(nn.Module):
     def __init__(self, num_classes):
         super(MyCNN, self).__init__()
+        self.num_classes = num_classes
+
         self.model = models.mobilenet_v2(pretrained=True)
+
         # Freeze early layers
         for param in self.model.features.parameters():
             param.requires_grad = False
@@ -44,7 +49,8 @@ class MyCNN(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-    def train_model(self, train_loader, val_loader, criterion, optimizer, num_epochs, patience=10):
+
+    def train_model(self, train_loader, val_loader, criterion, optimizer, num_epochs, patience=4):
         best_val_loss = float('inf')
         epochs_no_improve = 0
         early_stop = False
@@ -52,18 +58,19 @@ class MyCNN(nn.Module):
         # Lists to store losses for plotting
         training_losses = []
         validation_losses = []
-        self.model.train()
-        running_loss = 0.0
-        correct_train = 0
-        total_train = 0
 
+        # Initialize accuracy metric for training
+        train_accuracy_metric = MultilabelAccuracy(num_labels=self.num_classes).to(device)
 
         for epoch in range(num_epochs):
             if early_stop:
                 print(f"Early stopping triggered. Stopping training at epoch {epoch+1}.")
                 break
+            
             self.model.train()
             running_loss = 0.0
+            train_accuracy_metric.reset()
+
             for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)
                 optimizer.zero_grad()
@@ -72,26 +79,22 @@ class MyCNN(nn.Module):
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()
-                # Apply a threshold to get binary predictions for each label
-                predicted = (torch.sigmoid(outputs) > 0.5).float()
-                #print(f"Predicted shape: {predicted.shape}, Labels shape: {labels.shape}")
 
-
-                # Compare the predicted labels with the true labels
-                correct_train += (predicted == labels).sum().item()
-                total_train += labels.numel()  # Total number of labels
+                # Update accuracy metric
+                train_accuracy_metric.update(torch.sigmoid(outputs), labels)
 
             train_loss = running_loss / len(train_loader)
-            train_accuracy = correct_train / total_train  # Calculate training accuracy
+            train_accuracy = train_accuracy_metric.compute().item()  # Calculate training accuracy
 
-            val_loss, val_accuracy = self.evaluate_model(val_loader, criterion)
+            val_loss, val_accuracy = self.validate_model(val_loader, criterion,self.num_classes)
+
             # Store the losses
             training_losses.append(train_loss)
             validation_losses.append(val_loss)
 
             print(f"Epoch [{epoch+1}/{num_epochs}], "
-                  f"Training Loss: {train_loss:.4f}, Training Accuracy: {train_accuracy*100:.2f}%, "
-                  f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy*100:.2f}%")
+                f"Training Loss: {train_loss:.4f}, Training Accuracy: {train_accuracy*100:.2f}%, "
+                f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy*100:.2f}%")
 
             # Early stopping logic
             if val_loss < best_val_loss:
@@ -103,32 +106,45 @@ class MyCNN(nn.Module):
                 if epochs_no_improve >= patience:
                     print(f"No improvement for {patience} consecutive epochs. Stopping early.")
                     early_stop = True
+
         # Plot the training and validation loss
         self.plot_losses(training_losses, validation_losses)
 
 
-    def validate_model(self, val_loader, criterion):
+
+
+    def validate_model(self, val_loader, criterion, num_classes):
         self.model.eval()
         val_loss = 0.0
+        accuracy_metric = MultilabelAccuracy(num_labels=num_classes).to(device)
+
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
                 outputs = self.forward(images)
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
-        self.model.train()
-        return val_loss / len(val_loader)
 
-    def test_model(self, test_loader, criterion):
-        self.model.eval()
-        test_loss = 0.0
-        with torch.no_grad():
-            for images, labels in test_loader:
-                images, labels = images.to(config.device), labels.to(config.device)
-                outputs = self.forward(images)
-                loss = criterion(outputs, labels)
-                test_loss += loss.item()
-        return test_loss / len(test_loader)
+                # Calculate accuracy for multilabel classification
+                predictions = torch.sigmoid(outputs) > 0.5  # Convert logits to binary predictions
+                accuracy_metric.update(predictions, labels)
+
+        val_loss /= len(val_loader)
+        accuracy = accuracy_metric.compute()
+
+        self.model.train()
+        return val_loss, accuracy
+
+    # def test_model(self, test_loader, criterion):
+    #     self.model.eval()
+    #     test_loss = 0.0
+    #     with torch.no_grad():
+    #         for images, labels in test_loader:
+    #             images, labels = images.to(config.device), labels.to(config.device)
+    #             outputs = self.forward(images)
+    #             loss = criterion(outputs, labels)
+    #             test_loss += loss.item()
+    #     return test_loss / len(test_loader)
 
     def predict_labels(self, image_path, threshold):
         image = preprocess_image(image_path)
