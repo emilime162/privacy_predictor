@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import hamming_loss
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from utils import plot_losses
+from utils import plot_and_save_losses
 
 # Append the current working directory to the system path
 cwd = os.getcwd()
@@ -112,8 +112,8 @@ class MyCNN(nn.Module):
                     print(f"No improvement for {patience} consecutive epochs. Stopping early.")
                     early_stop = True
 
-        # Plot the training and validation loss
-        self.plot_losses(training_losses, validation_losses)
+        # After training, plot and save the losses
+        plot_and_save_losses(training_losses, validation_losses)
 
 
 
@@ -272,12 +272,12 @@ if __name__ == "__main__":
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # # Train the model
-    # num_epochs = 5
-    # model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
+    # Train the model
+    num_epochs = 8
+    model.train_model(train_loader, val_loader, criterion, optimizer, num_epochs)
 
-    # # Save the trained model
-    # torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
+    # Save the trained model
+    torch.save(model.state_dict(), 'mobilenet_v2_model.pth')
 
     num_classes = 2
 

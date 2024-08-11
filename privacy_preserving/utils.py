@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score
 import json
 import os
+import matplotlib.pyplot as plt
+
 
 def preprocess_image(image_path):
     transform = transforms.Compose([
@@ -29,12 +31,14 @@ def load_ground_truth_labels(json_path, dataset):
 
 
 
-def plot_losses(self, training_losses, validation_losses):
+def plot_and_save_losses(train_losses, val_losses):
     plt.figure(figsize=(10, 5))
-    plt.plot(training_losses, label='Training Loss')
-    plt.plot(validation_losses, label='Validation Loss')
-    plt.xlabel('Epochs')
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Training and Validation Loss over Epochs')
+    plt.title('Training and Validation Loss')
     plt.legend()
-    plt.show()
+    plt.grid(True)
+    plt.savefig('loss_plot.png')  # Save the plot as an image file
+    plt.close()  # Close the plot to avoid displaying it in the terminal
